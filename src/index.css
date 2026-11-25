@@ -150,10 +150,13 @@ input[type="number"] {
     visibility: hidden;
   }
   body.printing-wages-bill #daily-wages-bill-sheet,
-  body.printing-wages-bill #daily-wages-bill-sheet * {
+  body.printing-wages-bill #daily-wages-bill-sheet *,
+  body.printing-wages-bill #wages-vs-overtime-sheet,
+  body.printing-wages-bill #wages-vs-overtime-sheet * {
     visibility: visible;
   }
-  body.printing-wages-bill #daily-wages-bill-sheet {
+  body.printing-wages-bill #daily-wages-bill-sheet,
+  body.printing-wages-bill #wages-vs-overtime-sheet {
     position: absolute;
     left: 0;
     top: 0;

@@ -193,6 +193,15 @@ export const OvertimeReportsTab: React.FC = () => {
   const canViewCost = hasPageAction
     ? hasPageAction('overtime-management', 'view_cost')
     : currentUser.role === 'Super Admin';
+  const canViewMonthlySalary =
+    canViewCost ||
+    (hasPageAction
+      ? hasPageAction('payroll', 'view_salary_structure') ||
+        hasPageAction('payroll', 'edit_salary_structure') ||
+        hasPageAction('payroll', 'view_salary_sheets') ||
+        hasPageAction('payroll', 'create_payroll') ||
+        hasPageAction('payroll', 'approve_payroll')
+      : false);
 
   const [activeReport, setActiveReport] = useState<number>(1);
   const [departmentFilter, setDepartmentFilter] = useState('all');
@@ -699,7 +708,11 @@ export const OvertimeReportsTab: React.FC = () => {
       const key = matchedRep?.id || rec.employeeId || rec.employeeCode || rec.employeeName || '';
       if (!key || empMap.has(key)) return;
       const str = salaryStructures.find(
-        (s) => s.employeeId === key || (matchedRep?.code && s.employeeId === matchedRep.code)
+        (s) =>
+          s.employeeId === key ||
+          s.fieldForceId === key ||
+          (matchedRep?.code &&
+            (s.employeeId === matchedRep.code || s.employeeCode === matchedRep.code))
       );
       empMap.set(key, {
         id: key,
@@ -708,7 +721,13 @@ export const OvertimeReportsTab: React.FC = () => {
         department: repDept !== '-' ? repDept : undefined,
         employmentType: repEmpType,
         gender: repGender,
-        basicSalaryBDT: Number(str?.basicSalaryBDT ?? rec.basicSalaryBDT ?? matchedRep?.basicSalaryBDT ?? 0),
+        basicSalaryBDT: Number(
+          str?.basicSalaryBDT ||
+            rec.basicSalaryBDT ||
+            matchedRep?.basicSalaryBDT ||
+            str?.grossSalaryBDT ||
+            0
+        ),
         phone: matchedRep?.phone || '',
       });
     };
@@ -894,7 +913,7 @@ export const OvertimeReportsTab: React.FC = () => {
           row.name,
           row.employmentType,
           row.gender,
-          canViewCost ? row.monthlySalary : 'Restricted',
+          canViewMonthlySalary ? row.monthlySalary : 'Restricted',
           row.workDay,
           canViewCost ? row.ratePerDay : 'Restricted',
           canViewCost ? row.ratePerHour : 'Restricted',
@@ -1820,7 +1839,7 @@ export const OvertimeReportsTab: React.FC = () => {
                         {row.gender}
                       </td>
                       <td className="border border-black px-1.5 py-0.5 text-center font-sans">
-                        {canViewCost ? row.monthlySalary : 'Restricted'}
+                        {canViewMonthlySalary ? row.monthlySalary : 'Restricted'}
                       </td>
                       <td className="border border-black px-1 py-0.5 text-center font-sans">
                         {row.workDay}

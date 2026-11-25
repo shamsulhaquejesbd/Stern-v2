@@ -16967,15 +16967,51 @@ export const ERPProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const updateFieldForceRep = (repId: string, updates: Partial<FieldForceRep>) => {
     const canEdit = hasPageAction(currentUser, 'basic-data-field-force', 'edit');
     const canAssignTarget = hasPageAction(currentUser, 'basic-data-field-force', 'assign_target');
+    const canEditSalaryStructure = hasPageAction(currentUser, 'payroll', 'edit_salary_structure');
+    const canConfigureOvertimePolicy =
+      hasPageAction(currentUser, 'overtime-management', 'view_policies') &&
+      hasPageAction(currentUser, 'overtime-management', 'configure_policy');
+
     const definedKeys = Object.keys(updates).filter(
       (k) => (updates as Record<string, unknown>)[k] !== undefined
     );
     const isTargetOnlyUpdate =
       definedKeys.length > 0 && definedKeys.every((k) => k === 'monthlyTargetBDT');
+    const salarySyncKeys = new Set([
+      'basicSalaryBDT',
+      'conveyanceBDT',
+      'mobileAllowanceBDT',
+      'taDaBDT',
+    ]);
+    const isSalaryOnlyUpdate =
+      definedKeys.length > 0 && definedKeys.every((k) => salarySyncKeys.has(k));
+    const overtimePolicySyncKeys = new Set([
+      'isOvertimeEligible',
+      'overtimeCalculationBasis',
+      'overtimeStandardMonthlyHours',
+      'overtimeMultiplier',
+      'overtimeFixedHourlyRateBDT',
+      'overtimePolicyEffectiveFrom',
+      'overtimePolicyStatus',
+      'overtimePolicyNotes',
+      'overtimePolicyHistory',
+    ]);
+    const isOvertimePolicyOnlyUpdate =
+      definedKeys.length > 0 && definedKeys.every((k) => overtimePolicySyncKeys.has(k));
 
     if (isTargetOnlyUpdate) {
       if (!canAssignTarget) {
         console.warn('Permission Denied: User lacks assign_target permission for Field Force');
+        return;
+      }
+    } else if (isSalaryOnlyUpdate) {
+      if (!canEdit && !canEditSalaryStructure) {
+        console.warn('Permission Denied: User lacks edit or edit_salary_structure permission for Field Force');
+        return;
+      }
+    } else if (isOvertimePolicyOnlyUpdate) {
+      if (!canEdit && !canConfigureOvertimePolicy) {
+        console.warn('Permission Denied: User lacks edit or configure_policy permission for Field Force');
         return;
       }
     } else if (!canEdit) {
@@ -16995,10 +17031,20 @@ export const ERPProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       prev.map((r) => (r.id === repId ? { ...r, ...sanitizedUpdates } : r))
     );
     addAuditLog(
-      isTargetOnlyUpdate ? 'FIELD_FORCE_TARGET_ASSIGNED' : 'FIELD_FORCE_UPDATED',
+      isTargetOnlyUpdate
+        ? 'FIELD_FORCE_TARGET_ASSIGNED'
+        : isOvertimePolicyOnlyUpdate
+        ? 'FIELD_FORCE_OT_POLICY_SYNCED'
+        : isSalaryOnlyUpdate
+        ? 'FIELD_FORCE_SALARY_SYNCED'
+        : 'FIELD_FORCE_UPDATED',
       'Field Force Master',
       isTargetOnlyUpdate
         ? `Updated monthly sales target for ID ${repId} to BDT ${Number(sanitizedUpdates.monthlyTargetBDT || 0).toLocaleString()}`
+        : isOvertimePolicyOnlyUpdate
+        ? `Synced overtime policy fields for employee ID ${repId}`
+        : isSalaryOnlyUpdate
+        ? `Synced salary structure compensation fields for employee ID ${repId}`
         : `Updated field force profile for ID ${repId}`
     );
     const sb = getSupabase();

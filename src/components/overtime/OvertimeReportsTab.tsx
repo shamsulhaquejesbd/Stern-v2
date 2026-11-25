@@ -172,8 +172,6 @@ export const OvertimeReportsTab: React.FC = () => {
   const {
     overtimeRequests,
     overtimeAttendances,
-    overtimeRecords,
-    attendanceRecords,
     fieldForceReps,
     departments,
     salaryStructures,
@@ -225,7 +223,7 @@ export const OvertimeReportsTab: React.FC = () => {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [isEmpTypeDropdownOpen]);
 
-  // If the default current month has no overtime data yet while another month does, auto-select the latest month with OT data
+  // If the default current month has no Final Approved overtime data yet while another month does, auto-select the latest month with Final Approved OT data
   useEffect(() => {
     if (hasUserChangedMonthRef.current || !monthFilter) return;
     const allDates: string[] = [];
@@ -233,15 +231,6 @@ export const OvertimeReportsTab: React.FC = () => {
       if (r.status === 'Final Approved' && r.overtimeDate) {
         allDates.push(r.overtimeDate);
       }
-    });
-    overtimeAttendances.forEach((a) => {
-      if (!a.requestId && a.date) allDates.push(a.date);
-    });
-    (overtimeRecords || []).forEach((o) => {
-      if (o.status === 'Approved' && o.date) allDates.push(o.date);
-    });
-    (attendanceRecords || []).forEach((a) => {
-      if (Number(a.overtimeHours) > 0 && a.date) allDates.push(a.date);
     });
 
     const parsedYms = allDates
@@ -254,7 +243,7 @@ export const OvertimeReportsTab: React.FC = () => {
         setMonthFilter(latestYm);
       }
     }
-  }, [overtimeRequests, overtimeAttendances, overtimeRecords, attendanceRecords, monthFilter]);
+  }, [overtimeRequests, monthFilter]);
 
   // List of 7 reports requested
   const reportsList = useMemo(
@@ -573,45 +562,6 @@ export const OvertimeReportsTab: React.FC = () => {
       return true;
     });
 
-    const activeAtts = overtimeAttendances.filter((a) => {
-      if (a.requestId) return false; // Linked OT request attendances are only included when the request itself is Final Approved
-      if (!matchesPeriod(a.date)) return false;
-      if (employeeFilter !== 'all') {
-        if (selectedEmployeeFilterObj) {
-          if (!matchesEmpIdentity(selectedEmployeeFilterObj, a)) return false;
-        } else if (a.employeeId !== employeeFilter) {
-          return false;
-        }
-      }
-      return true;
-    });
-
-    const activeLegacyRecs = (overtimeRecords || []).filter((o) => {
-      if (o.status !== 'Approved') return false;
-      if (!matchesPeriod(o.date || o.monthYear)) return false;
-      if (employeeFilter !== 'all') {
-        if (selectedEmployeeFilterObj) {
-          if (!matchesEmpIdentity(selectedEmployeeFilterObj, o)) return false;
-        } else if (o.employeeId !== employeeFilter) {
-          return false;
-        }
-      }
-      return true;
-    });
-
-    const activeDailyAttOT = (attendanceRecords || []).filter((a) => {
-      if (!(Number(a.overtimeHours) > 0)) return false;
-      if (!matchesPeriod(a.date)) return false;
-      if (employeeFilter !== 'all') {
-        if (selectedEmployeeFilterObj) {
-          if (!matchesEmpIdentity(selectedEmployeeFilterObj, a)) return false;
-        } else if (a.employeeId !== employeeFilter && a.fieldForceId !== employeeFilter) {
-          return false;
-        }
-      }
-      return true;
-    });
-
     type EmpSeed = {
       id: string;
       code: string;
@@ -709,9 +659,6 @@ export const OvertimeReportsTab: React.FC = () => {
     };
 
     activeReqs.forEach(ensureEmployeeSeed);
-    activeAtts.forEach(ensureEmployeeSeed);
-    activeLegacyRecs.forEach(ensureEmployeeSeed);
-    activeDailyAttOT.forEach(ensureEmployeeSeed);
 
     const sortedEmployees = Array.from(empMap.values()).sort((a, b) =>
       String(a.code).localeCompare(String(b.code), undefined, { numeric: true })
@@ -765,7 +712,6 @@ export const OvertimeReportsTab: React.FC = () => {
       const dailyHours = new Array(daysInActiveMonth).fill(0);
       let totalHours = 0;
       let totalAmount = 0;
-      const coveredDates = new Set<string>();
 
       const empReqs = activeReqs.filter((r) => matchesEmpIdentity(emp, r));
       empReqs.forEach((req) => {
@@ -783,11 +729,8 @@ export const OvertimeReportsTab: React.FC = () => {
               ? attHrs
               : Number(req.expectedHours || 0);
 
-        if (parsed) {
-          coveredDates.add(parsed.ymd);
-          if (parsed.day >= 1 && parsed.day <= daysInActiveMonth && hrs > 0) {
-            dailyHours[parsed.day - 1] += hrs;
-          }
+        if (parsed && parsed.day >= 1 && parsed.day <= daysInActiveMonth && hrs > 0) {
+          dailyHours[parsed.day - 1] += hrs;
         }
         totalHours += hrs;
         if (
@@ -799,60 +742,6 @@ export const OvertimeReportsTab: React.FC = () => {
           const calc = calculateEmployeeIndividualOvertime(monthlySalary, monthEffectivePolicy, hrs);
           totalAmount += calc.totalAmountBDT;
         }
-      });
-
-      const empAtts = activeAtts.filter((a) => matchesEmpIdentity(emp, a));
-      empAtts.forEach((att) => {
-        const parsed = extractYMD(att.date);
-        const hrs =
-          Number(att.actualOvertimeHours) > 0
-            ? Number(att.actualOvertimeHours)
-            : Number(att.rawCalculatedHours || 0);
-        if (parsed) {
-          coveredDates.add(parsed.ymd);
-          if (parsed.day >= 1 && parsed.day <= daysInActiveMonth && hrs > 0) {
-            dailyHours[parsed.day - 1] += hrs;
-          }
-        }
-        totalHours += hrs;
-        const calc = calculateEmployeeIndividualOvertime(monthlySalary, monthEffectivePolicy, hrs);
-        totalAmount += calc.totalAmountBDT;
-      });
-
-      const empLegacy = activeLegacyRecs.filter((o) => matchesEmpIdentity(emp, o));
-      empLegacy.forEach((ot) => {
-        const parsed = extractYMD(ot.date);
-        if (parsed && coveredDates.has(parsed.ymd)) return;
-        const hrs = Number(ot.hours || 0);
-        if (parsed) {
-          coveredDates.add(parsed.ymd);
-          if (parsed.day >= 1 && parsed.day <= daysInActiveMonth && hrs > 0) {
-            dailyHours[parsed.day - 1] += hrs;
-          }
-        }
-        totalHours += hrs;
-        if (ot.totalAmountBDT !== undefined && ot.totalAmountBDT !== null) {
-          totalAmount += Number(ot.totalAmountBDT) || 0;
-        } else {
-          const calc = calculateEmployeeIndividualOvertime(monthlySalary, monthEffectivePolicy, hrs);
-          totalAmount += calc.totalAmountBDT;
-        }
-      });
-
-      const empDailyAtt = activeDailyAttOT.filter((a) => matchesEmpIdentity(emp, a));
-      empDailyAtt.forEach((att) => {
-        const parsed = extractYMD(att.date);
-        if (parsed && coveredDates.has(parsed.ymd)) return;
-        const hrs = Number(att.overtimeHours || 0);
-        if (parsed) {
-          coveredDates.add(parsed.ymd);
-          if (parsed.day >= 1 && parsed.day <= daysInActiveMonth && hrs > 0) {
-            dailyHours[parsed.day - 1] += hrs;
-          }
-        }
-        totalHours += hrs;
-        const calc = calculateEmployeeIndividualOvertime(monthlySalary, monthEffectivePolicy, hrs);
-        totalAmount += calc.totalAmountBDT;
       });
 
       return {
@@ -894,8 +783,6 @@ export const OvertimeReportsTab: React.FC = () => {
   }, [
     overtimeRequests,
     overtimeAttendances,
-    overtimeRecords,
-    attendanceRecords,
     fieldForceReps,
     departments,
     salaryStructures,

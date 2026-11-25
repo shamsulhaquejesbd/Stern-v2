@@ -1100,7 +1100,7 @@ export const DailyWagesBillFactory: React.FC<DailyWagesBillFactoryProps> = ({
               ) : (
                 <FileText className="w-3.5 h-3.5" />
               )}
-              <span>{isExportingPdf ? 'Generating PDF...' : 'Download PDF (Landscape)'}</span>
+              <span>{isExportingPdf ? 'Generating PDF...' : 'Download PDF'}</span>
             </button>
             <button
               type="button"

@@ -1005,33 +1005,83 @@ export const OvertimeReportsTab: React.FC = () => {
 
       const styleTag = rootEl.ownerDocument.createElement('style');
       if (isDeptBill) {
-        rootEl.style.padding = '8px 10px';
+        rootEl.style.padding = '16px 20px';
         rootEl.style.width = 'max-content';
         styleTag.textContent = `
+          [data-ot-pdf-root="true"] [data-ot-page-label="true"] {
+            top: 14px !important;
+            right: 24px !important;
+            font-size: 20px !important;
+          }
+          [data-ot-pdf-root="true"] [data-ot-header="true"] {
+            margin-bottom: 8px !important;
+          }
+          [data-ot-pdf-root="true"] [data-ot-header="true"] > div:nth-child(1) {
+            font-size: 28px !important;
+            line-height: 1.25 !important;
+          }
+          [data-ot-pdf-root="true"] [data-ot-header="true"] > div:nth-child(2) {
+            font-size: 24px !important;
+            line-height: 1.25 !important;
+          }
           [data-ot-pdf-root="true"] table {
             width: auto !important;
-            border-collapse: collapse !important;
-            font-size: 9.5px !important;
+            border-collapse: separate !important;
+            border-spacing: 0 !important;
+            border-top: 1px solid #000000 !important;
+            border-left: 1px solid #000000 !important;
+            border-right: 0 !important;
+            border-bottom: 0 !important;
+            font-size: 19px !important;
           }
           [data-ot-pdf-root="true"] th,
           [data-ot-pdf-root="true"] td {
-            padding: 2.5px 3px !important;
+            border-top: 0 !important;
+            border-left: 0 !important;
+            border-right: 1px solid #000000 !important;
+            border-bottom: 1px solid #000000 !important;
+            padding: 5px 6px !important;
             line-height: 1.15 !important;
           }
+          [data-ot-pdf-root="true"] [data-ot-month-banner="true"] {
+            font-size: 22px !important;
+            padding: 4px 8px !important;
+          }
+          [data-ot-pdf-root="true"] [data-ot-wk-col="true"] {
+            font-size: 18px !important;
+          }
+          [data-ot-pdf-root="true"] [data-ot-row="total"] td {
+            font-size: 20px !important;
+          }
+          [data-ot-pdf-root="true"] [data-ot-row="empty"] td {
+            font-size: 22px !important;
+            padding: 48px 12px !important;
+          }
           [data-ot-pdf-root="true"] [data-ot-day-col="true"] {
-            min-width: 17px !important;
-            padding-left: 1.5px !important;
-            padding-right: 1.5px !important;
+            min-width: 34px !important;
+            padding-left: 3px !important;
+            padding-right: 3px !important;
           }
           [data-ot-pdf-root="true"] [data-ot-sig-col="true"] {
-            min-width: 54px !important;
+            min-width: 108px !important;
           }
           [data-ot-pdf-root="true"] [data-ot-mob-col="true"] {
-            min-width: 66px !important;
+            min-width: 132px !important;
+          }
+          [data-ot-pdf-root="true"] [data-ot-footer="true"] > div:first-child {
+            margin-top: 12px !important;
+            padding-left: 128px !important;
+            font-size: 22px !important;
           }
           [data-ot-pdf-root="true"] [data-ot-footer="true"] > div:last-child {
-            margin-top: 28px !important;
-            margin-bottom: 4px !important;
+            margin-top: 52px !important;
+            margin-bottom: 8px !important;
+            padding-left: 128px !important;
+            padding-right: 128px !important;
+            font-size: 22px !important;
+          }
+          [data-ot-pdf-root="true"] [data-ot-footer="true"] > div:last-child > div {
+            gap: 288px !important;
           }
         `;
       } else {
@@ -1074,8 +1124,10 @@ export const OvertimeReportsTab: React.FC = () => {
       }
 
       const tableEl = rootEl.querySelector('table') as HTMLElement | null;
-      const minW = isDeptBill ? 1200 : 1080;
-      const fullWidth = tableEl ? Math.max(minW, Math.ceil(tableEl.scrollWidth + 28)) : 1320;
+      const minW = isDeptBill ? 2400 : 1080;
+      const padW = isDeptBill ? 48 : 28;
+      const fallbackW = isDeptBill ? 2640 : 1320;
+      const fullWidth = tableEl ? Math.max(minW, Math.ceil(tableEl.scrollWidth + padW)) : fallbackW;
       rootEl.style.width = `${fullWidth}px`;
       return fullWidth;
     };
@@ -1105,7 +1157,7 @@ export const OvertimeReportsTab: React.FC = () => {
       measureHost.style.position = 'fixed';
       measureHost.style.left = '-100000px';
       measureHost.style.top = '0';
-      measureHost.style.width = '2400px';
+      measureHost.style.width = isDeptBill ? '4200px' : '2400px';
       measureHost.style.visibility = 'hidden';
       measureHost.style.pointerEvents = 'none';
       measureHost.style.zIndex = '-1';
@@ -1115,7 +1167,10 @@ export const OvertimeReportsTab: React.FC = () => {
       document.body.appendChild(measureHost);
 
       const fullTableWidth = applyCompactPdfStyles(measureEl);
-      const maxPageHeightPx = Math.max(400, Math.floor(fullTableWidth * (maxH / maxW)) - 14);
+      const maxPageHeightPx = Math.max(
+        isDeptBill ? 800 : 400,
+        Math.floor(fullTableWidth * (maxH / maxW)) - (isDeptBill ? 28 : 14)
+      );
 
       const totalSheetHeight = measureEl.getBoundingClientRect().height;
       const theadEl = measureEl.querySelector('thead') as HTMLElement | null;
@@ -1123,20 +1178,20 @@ export const OvertimeReportsTab: React.FC = () => {
       const footerEl = measureEl.querySelector('[data-ot-footer="true"]') as HTMLElement | null;
       const workerRowEls = Array.from(measureEl.querySelectorAll('[data-ot-row="data"]')) as HTMLElement[];
 
-      const theadHeight = theadEl ? theadEl.getBoundingClientRect().height : 44;
+      const theadHeight = theadEl ? theadEl.getBoundingClientRect().height : (isDeptBill ? 88 : 44);
       const totalRowHeight = totalRowEl ? totalRowEl.getBoundingClientRect().height : 0;
-      const footerHeight = footerEl ? footerEl.getBoundingClientRect().height + 10 : 0;
+      const footerHeight = footerEl ? footerEl.getBoundingClientRect().height + (isDeptBill ? 20 : 10) : 0;
       const rowHeights = workerRowEls.map((tr) => tr.getBoundingClientRect().height);
       const allRowsHeight = rowHeights.reduce((sum, h) => sum + h, 0);
       const titleAndPaddingHeight = Math.max(
-        44,
+        isDeptBill ? 88 : 44,
         totalSheetHeight - theadHeight - allRowsHeight - totalRowHeight - footerHeight
       );
 
       document.body.removeChild(measureHost);
       measureHost = null;
 
-      const baseChromeHeight = titleAndPaddingHeight + theadHeight + 8;
+      const baseChromeHeight = titleAndPaddingHeight + theadHeight + (isDeptBill ? 16 : 8);
       const footerChromeHeight = totalRowHeight + footerHeight;
 
       interface PdfPageSlice {
@@ -1186,13 +1241,13 @@ export const OvertimeReportsTab: React.FC = () => {
         const slice = pages[pageIdx];
 
         const canvas = await html2canvas(targetEl, {
-          scale: 2.5,
+          scale: isDeptBill ? 2 : 2.5,
           useCORS: true,
           allowTaint: true,
           backgroundColor: '#ffffff',
           logging: false,
-          windowWidth: 2400,
-          windowHeight: 1600,
+          windowWidth: isDeptBill ? 4200 : 2400,
+          windowHeight: isDeptBill ? 2800 : 1600,
           onclone: (_clonedDoc, clonedEl) => {
             const dataRows = Array.from(clonedEl.querySelectorAll('[data-ot-row="data"]')) as HTMLElement[];
             dataRows.forEach((tr, idx) => {
@@ -1734,7 +1789,7 @@ export const OvertimeReportsTab: React.FC = () => {
           />
 
           {/* Centered Company & Bill Titles */}
-          <div className="text-center leading-snug mb-1 text-black">
+          <div data-ot-header="true" className="text-center leading-snug mb-1 text-black">
             <div className="text-[14px] font-bold tracking-tight">
               {companyDisplayName}
             </div>
@@ -1744,13 +1799,14 @@ export const OvertimeReportsTab: React.FC = () => {
           </div>
 
           <div data-ot-table-wrap="true" className="overflow-x-auto">
-            <table className="w-full border-collapse text-[10px] text-black">
+            <table className="w-full border-separate border-spacing-0 border-t-[0.5px] border-l-[0.5px] border-solid border-black text-[10px] text-black">
               <thead>
                 {/* Month Banner Row spanning full table width */}
                 <tr>
                   <th
                     colSpan={totalTableCols}
-                    className="border border-black py-0.5 px-2 text-center font-bold text-[11px] bg-white"
+                    data-ot-month-banner="true"
+                    className="border-r-[0.5px] border-b-[0.5px] border-solid border-black py-0.5 px-2 text-center font-bold text-[11px] bg-white"
                   >
                     For the month of &nbsp;{monthHeadingLabel}
                   </th>
@@ -1758,40 +1814,41 @@ export const OvertimeReportsTab: React.FC = () => {
 
                 {/* Sub-header Row: blank cells on left/right, Weekday labels above 1..31 */}
                 <tr>
-                  <th className="border border-black px-1 py-0.5 bg-white"></th>
-                  <th className="border border-black px-1 py-0.5 bg-white"></th>
-                  <th className="border border-black px-1 py-0.5 bg-white"></th>
-                  <th className="border border-black px-1 py-0.5 bg-white"></th>
-                  <th className="border border-black px-1 py-0.5 bg-white"></th>
-                  <th className="border border-black px-1 py-0.5 bg-white"></th>
-                  <th className="border border-black px-1 py-0.5 bg-white"></th>
-                  <th className="border border-black px-1 py-0.5 bg-white"></th>
-                  <th className="border border-black px-1 py-0.5 bg-white"></th>
+                  <th className="border-r-[0.5px] border-b-[0.5px] border-solid border-black px-1 py-0.5 bg-white"></th>
+                  <th className="border-r-[0.5px] border-b-[0.5px] border-solid border-black px-1 py-0.5 bg-white"></th>
+                  <th className="border-r-[0.5px] border-b-[0.5px] border-solid border-black px-1 py-0.5 bg-white"></th>
+                  <th className="border-r-[0.5px] border-b-[0.5px] border-solid border-black px-1 py-0.5 bg-white"></th>
+                  <th className="border-r-[0.5px] border-b-[0.5px] border-solid border-black px-1 py-0.5 bg-white"></th>
+                  <th className="border-r-[0.5px] border-b-[0.5px] border-solid border-black px-1 py-0.5 bg-white"></th>
+                  <th className="border-r-[0.5px] border-b-[0.5px] border-solid border-black px-1 py-0.5 bg-white"></th>
+                  <th className="border-r-[0.5px] border-b-[0.5px] border-solid border-black px-1 py-0.5 bg-white"></th>
+                  <th className="border-r-[0.5px] border-b-[0.5px] border-solid border-black px-1 py-0.5 bg-white"></th>
                   {dayHeaders.map((d) => (
                     <th
                       key={`wk-${d.day}`}
-                      className="border border-black px-0.5 py-0.5 text-center font-normal text-[9px] bg-white min-w-[20px]"
+                      data-ot-wk-col="true"
+                      className="border-r-[0.5px] border-b-[0.5px] border-solid border-black px-0.5 py-0.5 text-center font-normal text-[9px] bg-white min-w-[20px]"
                     >
                       {d.weekday}
                     </th>
                   ))}
-                  <th className="border border-black px-1 py-0.5 bg-white"></th>
-                  <th className="border border-black px-1 py-0.5 bg-white"></th>
-                  <th className="border border-black px-1 py-0.5 bg-white"></th>
-                  <th className="border border-black px-1 py-0.5 bg-white"></th>
+                  <th className="border-r-[0.5px] border-b-[0.5px] border-solid border-black px-1 py-0.5 bg-white"></th>
+                  <th className="border-r-[0.5px] border-b-[0.5px] border-solid border-black px-1 py-0.5 bg-white"></th>
+                  <th className="border-r-[0.5px] border-b-[0.5px] border-solid border-black px-1 py-0.5 bg-white"></th>
+                  <th className="border-r-[0.5px] border-b-[0.5px] border-solid border-black px-1 py-0.5 bg-white"></th>
                 </tr>
 
                 {/* Main Header Row */}
                 <tr className="font-bold text-center bg-white">
-                  <th className="border border-black px-1.5 py-1 whitespace-nowrap">S/N</th>
-                  <th className="border border-black px-1.5 py-1 whitespace-nowrap">EMP ID</th>
-                  <th className="border border-black px-2 py-1 whitespace-nowrap">Name Of Worker</th>
-                  <th className="border border-black px-2 py-1 whitespace-nowrap">Employment Type</th>
-                  <th className="border border-black px-1.5 py-1 whitespace-nowrap">Gender</th>
-                  <th className="border border-black px-1.5 py-1 whitespace-nowrap">Monthly Salary</th>
-                  <th className="border border-black px-1.5 py-1 whitespace-nowrap">Work Day</th>
-                  <th className="border border-black px-1.5 py-1 whitespace-nowrap">Rate/ Day</th>
-                  <th className="border border-black px-1.5 py-1 whitespace-nowrap leading-tight">
+                  <th className="border-r-[0.5px] border-b-[0.5px] border-solid border-black px-1.5 py-1 whitespace-nowrap">S/N</th>
+                  <th className="border-r-[0.5px] border-b-[0.5px] border-solid border-black px-1.5 py-1 whitespace-nowrap">EMP ID</th>
+                  <th className="border-r-[0.5px] border-b-[0.5px] border-solid border-black px-2 py-1 whitespace-nowrap">Name Of Worker</th>
+                  <th className="border-r-[0.5px] border-b-[0.5px] border-solid border-black px-2 py-1 whitespace-nowrap">Employment Type</th>
+                  <th className="border-r-[0.5px] border-b-[0.5px] border-solid border-black px-1.5 py-1 whitespace-nowrap">Gender</th>
+                  <th className="border-r-[0.5px] border-b-[0.5px] border-solid border-black px-1.5 py-1 whitespace-nowrap">Monthly Salary</th>
+                  <th className="border-r-[0.5px] border-b-[0.5px] border-solid border-black px-1.5 py-1 whitespace-nowrap">Work Day</th>
+                  <th className="border-r-[0.5px] border-b-[0.5px] border-solid border-black px-1.5 py-1 whitespace-nowrap">Rate/ Day</th>
+                  <th className="border-r-[0.5px] border-b-[0.5px] border-solid border-black px-1.5 py-1 whitespace-nowrap leading-tight">
                     Rate/
                     <br />
                     Hrs
@@ -1799,28 +1856,28 @@ export const OvertimeReportsTab: React.FC = () => {
                   {dayHeaders.map((d) => (
                     <th
                       key={`day-${d.day}`}
-                      className="border border-black px-0.5 py-1 text-center font-bold min-w-[20px]"
+                      className="border-r-[0.5px] border-b-[0.5px] border-solid border-black px-0.5 py-1 text-center font-bold min-w-[20px]"
                     >
                       {d.day}
                     </th>
                   ))}
-                  <th className="border border-black px-1.5 py-1 whitespace-nowrap leading-tight">
+                  <th className="border-r-[0.5px] border-b-[0.5px] border-solid border-black px-1.5 py-1 whitespace-nowrap leading-tight">
                     Total
                     <br />
                     HR
                   </th>
-                  <th className="border border-black px-2 py-1 whitespace-nowrap">Amount</th>
-                  <th className="border border-black px-3 py-1 whitespace-nowrap min-w-[68px]">Signature</th>
-                  <th className="border border-black px-2 py-1 whitespace-nowrap min-w-[82px]">Mobil NO</th>
+                  <th className="border-r-[0.5px] border-b-[0.5px] border-solid border-black px-2 py-1 whitespace-nowrap">Amount</th>
+                  <th className="border-r-[0.5px] border-b-[0.5px] border-solid border-black px-3 py-1 whitespace-nowrap min-w-[68px]">Signature</th>
+                  <th className="border-r-[0.5px] border-b-[0.5px] border-solid border-black px-2 py-1 whitespace-nowrap min-w-[82px]">Mobil NO</th>
                 </tr>
               </thead>
 
               <tbody>
                 {deptOvertimeSheet.rows.length === 0 ? (
-                  <tr>
+                  <tr data-ot-row="empty">
                     <td
                       colSpan={totalTableCols}
-                      className="border border-black py-6 text-center text-[11px] font-sans text-slate-500"
+                      className="border-r-[0.5px] border-b-[0.5px] border-solid border-black py-6 text-center text-[11px] font-sans text-slate-500"
                     >
                       No employees or overtime records found for the selected filters.
                     </td>
@@ -1828,47 +1885,47 @@ export const OvertimeReportsTab: React.FC = () => {
                 ) : (
                   deptOvertimeSheet.rows.map((row) => (
                     <tr key={`${row.empId}-${row.sn}`} data-ot-row="data">
-                      <td className="border border-black px-1 py-0.5 text-center">{row.sn}</td>
-                      <td className="border border-black px-1.5 py-0.5 text-center font-bold whitespace-nowrap">
+                      <td className="border-r-[0.5px] border-b-[0.5px] border-solid border-black px-1 py-0.5 text-center">{row.sn}</td>
+                      <td className="border-r-[0.5px] border-b-[0.5px] border-solid border-black px-1.5 py-0.5 text-center font-bold whitespace-nowrap">
                         {row.empId}
                       </td>
-                      <td className="border border-black px-1.5 py-0.5 text-left font-bold whitespace-nowrap">
+                      <td className="border-r-[0.5px] border-b-[0.5px] border-solid border-black px-1.5 py-0.5 text-left font-bold whitespace-nowrap">
                         {row.name}
                       </td>
-                      <td className="border border-black px-1.5 py-0.5 text-center whitespace-nowrap font-sans">
+                      <td className="border-r-[0.5px] border-b-[0.5px] border-solid border-black px-1.5 py-0.5 text-center whitespace-nowrap font-sans">
                         {row.employmentType}
                       </td>
-                      <td className="border border-black px-1.5 py-0.5 text-center whitespace-nowrap font-sans">
+                      <td className="border-r-[0.5px] border-b-[0.5px] border-solid border-black px-1.5 py-0.5 text-center whitespace-nowrap font-sans">
                         {row.gender}
                       </td>
-                      <td className="border border-black px-1.5 py-0.5 text-center font-sans">
+                      <td className="border-r-[0.5px] border-b-[0.5px] border-solid border-black px-1.5 py-0.5 text-center font-sans">
                         {canViewMonthlySalary ? row.monthlySalary : 'Restricted'}
                       </td>
-                      <td className="border border-black px-1 py-0.5 text-center font-sans">
+                      <td className="border-r-[0.5px] border-b-[0.5px] border-solid border-black px-1 py-0.5 text-center font-sans">
                         {row.workDay}
                       </td>
-                      <td className="border border-black px-1.5 py-0.5 text-center font-sans">
+                      <td className="border-r-[0.5px] border-b-[0.5px] border-solid border-black px-1.5 py-0.5 text-center font-sans">
                         {canViewMonthlySalary ? row.ratePerDay : 'Restricted'}
                       </td>
-                      <td className="border border-black px-1.5 py-0.5 text-center font-sans">
+                      <td className="border-r-[0.5px] border-b-[0.5px] border-solid border-black px-1.5 py-0.5 text-center font-sans">
                         {canViewMonthlySalary ? row.ratePerHour : 'Restricted'}
                       </td>
                       {row.dailyHours.map((hrs, idx) => (
                         <td
                           key={`cell-${row.sn}-${idx}`}
-                          className="border border-black px-0.5 py-0.5 text-center font-sans"
+                          className="border-r-[0.5px] border-b-[0.5px] border-solid border-black px-0.5 py-0.5 text-center font-sans"
                         >
                           {hrs > 0 ? formatHoursValue(hrs) : ''}
                         </td>
                       ))}
-                      <td className="border border-black px-1.5 py-0.5 text-center font-bold font-sans">
+                      <td className="border-r-[0.5px] border-b-[0.5px] border-solid border-black px-1.5 py-0.5 text-center font-bold font-sans">
                         {formatHoursValue(row.totalHours)}
                       </td>
-                      <td className="border border-black px-1.5 py-0.5 text-center font-bold font-sans">
+                      <td className="border-r-[0.5px] border-b-[0.5px] border-solid border-black px-1.5 py-0.5 text-center font-bold font-sans">
                         {canViewMonthlySalary ? row.totalAmount : 'Restricted'}
                       </td>
-                      <td className="border border-black px-2 py-0.5"></td>
-                      <td className="border border-black px-1.5 py-0.5 text-center whitespace-nowrap font-sans">
+                      <td className="border-r-[0.5px] border-b-[0.5px] border-solid border-black px-2 py-0.5"></td>
+                      <td className="border-r-[0.5px] border-b-[0.5px] border-solid border-black px-1.5 py-0.5 text-center whitespace-nowrap font-sans">
                         {row.mobileNo}
                       </td>
                     </tr>
@@ -1877,31 +1934,31 @@ export const OvertimeReportsTab: React.FC = () => {
 
                 {/* Total Row */}
                 <tr data-ot-row="total" className="font-bold bg-white">
-                  <td colSpan={3} className="border border-black px-2 py-1 text-center text-[11px]">
+                  <td colSpan={3} className="border-r-[0.5px] border-b-[0.5px] border-solid border-black px-2 py-1 text-center text-[11px]">
                     Total
                   </td>
-                  <td className="border border-black px-1 py-1"></td>
-                  <td className="border border-black px-1 py-1"></td>
-                  <td className="border border-black px-1 py-1"></td>
-                  <td className="border border-black px-1 py-1"></td>
-                  <td className="border border-black px-1 py-1"></td>
-                  <td className="border border-black px-1 py-1"></td>
+                  <td className="border-r-[0.5px] border-b-[0.5px] border-solid border-black px-1 py-1"></td>
+                  <td className="border-r-[0.5px] border-b-[0.5px] border-solid border-black px-1 py-1"></td>
+                  <td className="border-r-[0.5px] border-b-[0.5px] border-solid border-black px-1 py-1"></td>
+                  <td className="border-r-[0.5px] border-b-[0.5px] border-solid border-black px-1 py-1"></td>
+                  <td className="border-r-[0.5px] border-b-[0.5px] border-solid border-black px-1 py-1"></td>
+                  <td className="border-r-[0.5px] border-b-[0.5px] border-solid border-black px-1 py-1"></td>
                   {deptOvertimeSheet.dailyTotals.map((daySum, idx) => (
                     <td
                       key={`tot-day-${idx}`}
-                      className="border border-black px-0.5 py-1 text-center font-sans"
+                      className="border-r-[0.5px] border-b-[0.5px] border-solid border-black px-0.5 py-1 text-center font-sans"
                     >
                       {formatHoursValue(daySum)}
                     </td>
                   ))}
-                  <td className="border border-black px-1.5 py-1 text-center font-sans">
+                  <td className="border-r-[0.5px] border-b-[0.5px] border-solid border-black px-1.5 py-1 text-center font-sans">
                     {formatHoursValue(deptOvertimeSheet.grandTotalHours)}
                   </td>
-                  <td className="border border-black px-1.5 py-1 text-center font-sans">
+                  <td className="border-r-[0.5px] border-b-[0.5px] border-solid border-black px-1.5 py-1 text-center font-sans">
                     {canViewMonthlySalary ? deptOvertimeSheet.grandTotalAmount : 'Restricted'}
                   </td>
-                  <td className="border border-black px-2 py-1"></td>
-                  <td className="border border-black px-1.5 py-1"></td>
+                  <td className="border-r-[0.5px] border-b-[0.5px] border-solid border-black px-2 py-1"></td>
+                  <td className="border-r-[0.5px] border-b-[0.5px] border-solid border-black px-1.5 py-1"></td>
                 </tr>
               </tbody>
             </table>

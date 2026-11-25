@@ -897,6 +897,7 @@ export const ERP_PAGE_PERMISSIONS_REGISTRY: ERPModuleCategory[] = [
         description: 'Staff salaries, provident fund, mobile allowance, attendance deductions, and pay slips.',
         actions: [
           { key: 'view', label: 'View Payroll & Staff', description: 'Can view employee salary structures and monthly payroll sheets' },
+          { key: 'quick_action', label: 'Quick Action', description: 'Can use Quick Action attendance controls (Present, Late, Half Day, Absent, Save) in Payroll & HR → Attendance → Daily Grid' },
           { key: 'create_payroll', label: 'Process Monthly Payroll', description: 'Can calculate monthly salary, bonuses, and tax deductions' },
           { key: 'approve_payroll', label: 'Approve Salary Sheet', description: 'Can approve monthly payroll disbursements', isApprovalAction: true },
           { key: 'disburse', label: 'Disburse Salary Payments', description: 'Can release bank transfer advice or cash salary payouts' },

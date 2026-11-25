@@ -21788,18 +21788,18 @@ export const ERPProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       message?: string;
     } | null;
   }> => {
-    if (!hasPageAction(currentUser, 'payroll', 'create_payroll')) {
-      console.warn('Permission denied: create_payroll required to mark or override attendance.');
+    if (!hasPageAction(currentUser, 'payroll', 'quick_action')) {
+      console.warn('Permission denied: quick_action required to use Daily Grid Quick Action attendance controls.');
       addAuditLog(
         'PERMISSION_DENIED',
         'HR & Payroll',
-        `${currentUser?.name || 'User'} attempted manual attendance override without create_payroll permission`
+        `${currentUser?.name || 'User'} attempted Daily Grid Quick Action attendance update without quick_action permission`
       );
       return {
         success: false,
         id: '',
         dbSynced: false,
-        error: 'Permission denied: Process Monthly Payroll permission required.',
+        error: 'Permission denied: Quick Action permission required.',
       };
     }
 
@@ -21872,6 +21872,15 @@ export const ERPProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const rawText = await resp.text();
       const parsed = tryParseJsonSafe(rawText);
       const data = parsed.data;
+      if (resp.status === 403 && parsed.ok && data?.error) {
+        setAttendanceRecords(attendanceRecords);
+        return {
+          success: false,
+          id: '',
+          dbSynced: false,
+          error: data.error,
+        };
+      }
       if (
         contentType.includes('application/json') &&
         parsed.ok &&

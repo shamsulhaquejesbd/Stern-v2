@@ -187,9 +187,12 @@ export const OvertimeReportsTab: React.FC = () => {
   const canViewPage = hasPageAction
     ? hasPageAction('overtime-management', 'view_reports')
     : currentUser.role === 'Super Admin';
-  const canExport = (hasPageAction
-    ? hasPageAction('overtime-management', 'export')
-    : currentUser.role === 'Super Admin') && canViewPage;
+  const canExport =
+    canViewPage &&
+    (hasPageAction
+      ? hasPageAction('overtime-management', 'export') ||
+        hasPageAction('overtime-management', 'view_reports')
+      : currentUser.role === 'Super Admin');
   const canViewCost = hasPageAction
     ? hasPageAction('overtime-management', 'view_cost')
     : currentUser.role === 'Super Admin';

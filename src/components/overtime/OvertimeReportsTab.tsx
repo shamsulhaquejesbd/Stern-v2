@@ -915,11 +915,11 @@ export const OvertimeReportsTab: React.FC = () => {
           row.gender,
           canViewMonthlySalary ? row.monthlySalary : 'Restricted',
           row.workDay,
-          canViewCost ? row.ratePerDay : 'Restricted',
-          canViewCost ? row.ratePerHour : 'Restricted',
+          canViewMonthlySalary ? row.ratePerDay : 'Restricted',
+          canViewMonthlySalary ? row.ratePerHour : 'Restricted',
           ...row.dailyHours.map((h) => (h > 0 ? Number(h.toFixed(2)) : '')),
           Number(row.totalHours.toFixed(2)),
-          canViewCost ? row.totalAmount : 'Restricted',
+          canViewMonthlySalary ? row.totalAmount : 'Restricted',
           '',
           row.mobileNo,
         ]);
@@ -937,14 +937,14 @@ export const OvertimeReportsTab: React.FC = () => {
         '',
         ...deptOvertimeSheet.dailyTotals.map((t) => Number(t.toFixed(2))),
         Number(deptOvertimeSheet.grandTotalHours.toFixed(2)),
-        canViewCost ? deptOvertimeSheet.grandTotalAmount : 'Restricted',
+        canViewMonthlySalary ? deptOvertimeSheet.grandTotalAmount : 'Restricted',
         '',
         '',
       ]);
       sheetRows.push([]);
       sheetRows.push([
         '',
-        canViewCost
+        canViewMonthlySalary
           ? `TK. ${deptOvertimeSheet.amountInWords} Only .`
           : 'Financial totals restricted (View Overtime Financials permission required)',
       ]);
@@ -1845,10 +1845,10 @@ export const OvertimeReportsTab: React.FC = () => {
                         {row.workDay}
                       </td>
                       <td className="border border-black px-1.5 py-0.5 text-center font-sans">
-                        {canViewCost ? row.ratePerDay : 'Restricted'}
+                        {canViewMonthlySalary ? row.ratePerDay : 'Restricted'}
                       </td>
                       <td className="border border-black px-1.5 py-0.5 text-center font-sans">
-                        {canViewCost ? row.ratePerHour : 'Restricted'}
+                        {canViewMonthlySalary ? row.ratePerHour : 'Restricted'}
                       </td>
                       {row.dailyHours.map((hrs, idx) => (
                         <td
@@ -1862,7 +1862,7 @@ export const OvertimeReportsTab: React.FC = () => {
                         {formatHoursValue(row.totalHours)}
                       </td>
                       <td className="border border-black px-1.5 py-0.5 text-center font-bold font-sans">
-                        {canViewCost ? row.totalAmount : 'Restricted'}
+                        {canViewMonthlySalary ? row.totalAmount : 'Restricted'}
                       </td>
                       <td className="border border-black px-2 py-0.5"></td>
                       <td className="border border-black px-1.5 py-0.5 text-center whitespace-nowrap font-sans">
@@ -1895,7 +1895,7 @@ export const OvertimeReportsTab: React.FC = () => {
                     {formatHoursValue(deptOvertimeSheet.grandTotalHours)}
                   </td>
                   <td className="border border-black px-1.5 py-1 text-center font-sans">
-                    {canViewCost ? deptOvertimeSheet.grandTotalAmount : 'Restricted'}
+                    {canViewMonthlySalary ? deptOvertimeSheet.grandTotalAmount : 'Restricted'}
                   </td>
                   <td className="border border-black px-2 py-1"></td>
                   <td className="border border-black px-1.5 py-1"></td>
@@ -1907,7 +1907,7 @@ export const OvertimeReportsTab: React.FC = () => {
           <div data-ot-footer="true">
             {/* Amount in Words */}
             <div className="mt-1.5 pl-16 text-[11px] font-bold text-black">
-              {canViewCost
+              {canViewMonthlySalary
                 ? <>TK. &nbsp;{deptOvertimeSheet.amountInWords} &nbsp;Only .</>
                 : 'Financial totals restricted (View Overtime Financials permission required)'}
             </div>

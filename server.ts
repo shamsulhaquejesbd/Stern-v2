@@ -49,7 +49,7 @@ import {
   type AttendanceOvertimeSourceMode,
   type QrOvertimeSyncResult,
 } from './src/lib/overtimeAutomation.ts';
-import type { FieldForceRep, User } from './src/types/erp.ts';
+import { resolveUserPermissions, type FieldForceRep, type User } from './src/types/erp.ts';
 import {
   findLinkedUserForEmployee,
   resolveEmployeeForERPUser,
@@ -196,7 +196,10 @@ const mapSupabaseUserRow = (row: any) => {
         ? Number(rawGrace)
         : undefined,
     status: row.status || 'Active',
-    permissions: parsedPermissions || {},
+    permissions: resolveUserPermissions({
+      role: (row.role as any) || 'Field Force',
+      permissions: parsedPermissions,
+    }),
   };
 };
 
@@ -2033,16 +2036,27 @@ export function createAppServer() {
             return mapped;
           }
         }
-        const lookupUid = hdrCode || hdrId;
-        if (lookupUid) {
-          const { data } = await serverSupabase
+        const lookupKeys = Array.from(new Set([hdrId, hdrCode].filter(Boolean)));
+        for (const key of lookupKeys) {
+          const { data: byUid } = await serverSupabase
             .from('users')
             .select('*')
-            .eq('uid', lookupUid)
+            .eq('uid', key)
             .limit(1)
             .maybeSingle();
-          if (data) {
-            const mapped = mapSupabaseUserRow(data);
+          if (byUid) {
+            const mapped = mapSupabaseUserRow(byUid);
+            indexUserInMfgCache(mapped);
+            return mapped;
+          }
+          const { data: byUserId } = await serverSupabase
+            .from('users')
+            .select('*')
+            .eq('user_id', key)
+            .limit(1)
+            .maybeSingle();
+          if (byUserId) {
+            const mapped = mapSupabaseUserRow(byUserId);
             indexUserInMfgCache(mapped);
             return mapped;
           }
@@ -3576,7 +3590,7 @@ export function createAppServer() {
   const insertSingleRequisitionIntoPrimaryTables = async (
     reqRecord: OvertimeRequisition,
     options?: { allowLegacyStatusBackfill?: boolean }
-  ): Promise<{ ok: boolean; missingTable?: boolean; error?: string }> => {
+  ): Promise<{ ok: boolean; missingTable?: boolean; isUniqueConflict?: boolean; error?: string }> => {
     if (!serverSupabase) {
       return { ok: false, error: 'Supabase client is not configured on the server.' };
     }
@@ -3621,6 +3635,7 @@ export function createAppServer() {
       return {
         ok: false,
         missingTable: isMissingSupabaseTableError(reqErr),
+        isUniqueConflict: String(reqErr.code || '').trim() === '23505',
         error: reqErr.message || 'Failed to insert overtime requisition into Supabase.',
       };
     }
@@ -3668,6 +3683,7 @@ export function createAppServer() {
           { onConflict: 'id' }
         );
       if (purposeErr && !isMissingSupabaseTableError(purposeErr)) {
+        await serverSupabase.from('overtime_requisitions').delete().eq('id', reqRecord.id);
         return {
           ok: false,
           error: `Failed to save overtime_requisition_purposes: ${purposeErr.message}`,
@@ -3695,6 +3711,7 @@ export function createAppServer() {
           { onConflict: 'id', ignoreDuplicates: true }
         );
       if (histErr && !isMissingSupabaseTableError(histErr)) {
+        await serverSupabase.from('overtime_requisitions').delete().eq('id', reqRecord.id);
         return {
           ok: false,
           error: `Failed to save overtime_requisition_approval_history: ${histErr.message}`,
@@ -3966,32 +3983,44 @@ export function createAppServer() {
     }
 
     return withRequisitionLock(OVERTIME_REQUISITIONS_STORE_LOCK, async () => {
-      const loaded = await loadAuthoritativeOvertimeRequisitions();
-      if (loaded.error) {
-        return res.status(500).json({
-          allowed: true,
-          success: false,
-          dbSynced: false,
-          error: loaded.error,
-        });
-      }
-
-      const created = buildCreatedRequisition({
-        existingRequisitions: loaded.requisitions,
-        overtimeDate: validation.overtimeDate!,
-        requiredWorkers: validation.requiredWorkers!,
-        requestedHours: validation.requestedHours!,
-        purposes: validation.purposes!,
-        remarks: validation.remarks,
-        actor: caller,
-      });
-
       const actorLabel = String(caller.name || caller.email || caller.id || 'System');
       let persistedStorage: 'overtime_requisitions' | 'system_settings' = 'overtime_requisitions';
 
-      if (loaded.primaryTableAvailable) {
-        const primaryRes = await insertSingleRequisitionIntoPrimaryTables(created);
-        if (!primaryRes.ok) {
+      for (let attempt = 0; attempt < 2; attempt++) {
+        const loaded = await loadAuthoritativeOvertimeRequisitions();
+        if (loaded.error) {
+          return res.status(500).json({
+            allowed: true,
+            success: false,
+            dbSynced: false,
+            error: loaded.error,
+          });
+        }
+
+        const created = buildCreatedRequisition({
+          existingRequisitions: loaded.requisitions,
+          overtimeDate: validation.overtimeDate!,
+          requiredWorkers: validation.requiredWorkers!,
+          requestedHours: validation.requestedHours!,
+          purposes: validation.purposes!,
+          remarks: validation.remarks,
+          actor: caller,
+        });
+
+        if (loaded.primaryTableAvailable) {
+          const primaryRes = await insertSingleRequisitionIntoPrimaryTables(created);
+          if (primaryRes.ok) {
+            return res.status(201).json({
+              allowed: true,
+              success: true,
+              dbSynced: true,
+              storage: persistedStorage,
+              requisition: created,
+            });
+          }
+          if (primaryRes.isUniqueConflict && attempt === 0) {
+            continue;
+          }
           if (primaryRes.missingTable) {
             const fallbackRes = await saveRequisitionsToSystemSettings(
               [created, ...loaded.requisitions.filter((r) => r.id !== created.id)],
@@ -4007,38 +4036,50 @@ export function createAppServer() {
               });
             }
             persistedStorage = 'system_settings';
-          } else {
-            return res.status(500).json({
+            return res.status(201).json({
               allowed: true,
-              success: false,
-              dbSynced: false,
-              error: primaryRes.error || 'Failed to insert overtime requisition into Supabase.',
+              success: true,
+              dbSynced: true,
+              storage: persistedStorage,
+              requisition: created,
             });
           }
-        }
-      } else {
-        const fallbackRes = await saveRequisitionsToSystemSettings(
-          [created, ...loaded.requisitions.filter((r) => r.id !== created.id)],
-          actorLabel,
-          { id: created.id, expectedStatus: created.status }
-        );
-        if (!fallbackRes.ok) {
           return res.status(500).json({
             allowed: true,
             success: false,
             dbSynced: false,
-            error: fallbackRes.error || 'Failed to persist overtime requisition in Supabase.',
+            error: primaryRes.error || 'Failed to insert overtime requisition into Supabase.',
+          });
+        } else {
+          const fallbackRes = await saveRequisitionsToSystemSettings(
+            [created, ...loaded.requisitions.filter((r) => r.id !== created.id)],
+            actorLabel,
+            { id: created.id, expectedStatus: created.status }
+          );
+          if (!fallbackRes.ok) {
+            return res.status(500).json({
+              allowed: true,
+              success: false,
+              dbSynced: false,
+              error: fallbackRes.error || 'Failed to persist overtime requisition in Supabase.',
+            });
+          }
+          persistedStorage = 'system_settings';
+          return res.status(201).json({
+            allowed: true,
+            success: true,
+            dbSynced: true,
+            storage: persistedStorage,
+            requisition: created,
           });
         }
-        persistedStorage = 'system_settings';
       }
 
-      return res.status(201).json({
+      return res.status(500).json({
         allowed: true,
-        success: true,
-        dbSynced: true,
-        storage: persistedStorage,
-        requisition: created,
+        success: false,
+        dbSynced: false,
+        error: 'Could not generate a unique requisition number in Supabase.',
       });
     });
   });

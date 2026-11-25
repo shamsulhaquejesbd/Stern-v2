@@ -368,11 +368,24 @@ export const OvertimeRequisitionTab: React.FC = () => {
     if (!canAccessRequisition || isSubmittingForm) return;
     setFormFeedback(null);
 
+    const pendingManual = manualPurposeInput.trim();
+    const purposesToSubmit: OvertimeRequisitionPurposeItem[] = [...selectedPurposes];
+    if (
+      pendingManual &&
+      !purposesToSubmit.some((p) => p.purposeName.trim().toLowerCase() === pendingManual.toLowerCase())
+    ) {
+      purposesToSubmit.push({
+        id: `otrp-custom-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
+        purposeName: pendingManual,
+        isCustom: true,
+      });
+    }
+
     const validation = validateOvertimeRequisitionPayload({
       overtimeDate,
       requiredWorkers,
       requestedHours,
-      purposes: selectedPurposes,
+      purposes: purposesToSubmit,
       remarks,
     });
 
@@ -742,9 +755,9 @@ export const OvertimeRequisitionTab: React.FC = () => {
               <input
                 type="number"
                 required
-                min={0.5}
+                min={0.01}
                 max={24}
-                step={0.5}
+                step="any"
                 value={requestedHours}
                 onChange={(e) => setRequestedHours(e.target.value)}
                 placeholder="e.g. 3"

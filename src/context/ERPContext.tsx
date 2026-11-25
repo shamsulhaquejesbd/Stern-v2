@@ -271,6 +271,12 @@ import {
 } from '../types/overtime.ts';
 import { type RequisitionDecisionAction } from '../lib/overtimeRequisitionEngine.ts';
 import {
+  refreshOvertimeRequisitionsDirect,
+  createOvertimeRequisitionDirect,
+  updateOvertimeRequisitionDirect,
+  decideOvertimeRequisitionDirect,
+} from '../lib/overtimeRequisitionSupabase.ts';
+import {
   findCancelledOvertimeRequest,
   findDuplicateOvertimeRequest,
   reconcileAttendanceOvertimeRequest,
@@ -24494,6 +24500,21 @@ export const ERPProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return initialResp;
   };
 
+  const parseOvertimeRequisitionApiResponse = async (
+    resp: Response
+  ): Promise<{ isJsonApi: boolean; data: any }> => {
+    const contentType = String(resp.headers.get('content-type') || '').toLowerCase();
+    const rawText = await resp.text().catch(() => '');
+    const parsed = tryParseJsonSafe(rawText);
+    const isJsonApi = contentType.includes('application/json') && parsed.ok && parsed.data && typeof parsed.data === 'object';
+    return { isJsonApi, data: isJsonApi ? parsed.data : {} };
+  };
+
+  const shouldFallbackToDirectSupabaseRequisition = (resp: Response, isJsonApi: boolean): boolean => {
+    if (!isJsonApi) return true;
+    return [404, 405, 502, 503, 504].includes(resp.status);
+  };
+
   const refreshOvertimeRequisitions = async (): Promise<{ success: boolean; error?: string }> => {
     purgeOvertimeRequisitionLocalSessionMemory();
     if (!currentUser?.id || currentUser.id === 'guest') {
@@ -24501,33 +24522,67 @@ export const ERPProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setGrantedOvertimeRequisitions([]);
       return { success: false, error: 'User authentication is required to load overtime requisitions.' };
     }
+    const sb = getSupabase();
+    const usingCustomSupabase = getSupabaseUrl() !== DEFAULT_SUPABASE_URL;
+
+    if (usingCustomSupabase && sb) {
+      const direct = await refreshOvertimeRequisitionsDirect(sb, currentUser);
+      if (direct.success) {
+        setOvertimeRequisitions(deduplicateOvertimeRequisitions(direct.requisitions));
+        setGrantedOvertimeRequisitions(deduplicateOvertimeRequisitions(direct.grantedRequisitions));
+        return { success: true };
+      }
+      setOvertimeRequisitions([]);
+      setGrantedOvertimeRequisitions([]);
+      return { success: false, error: direct.error };
+    }
+
     try {
       const [mainResp, grantedResp] = await Promise.all([
         fetchOvertimeRequisitionApi('/api/overtime/requisitions'),
         fetchOvertimeRequisitionApi('/api/overtime/requisitions?grantedOnly=1'),
       ]);
 
+      const [mainParsed, grantedParsed] = await Promise.all([
+        parseOvertimeRequisitionApiResponse(mainResp),
+        parseOvertimeRequisitionApiResponse(grantedResp),
+      ]);
+
+      if (
+        (shouldFallbackToDirectSupabaseRequisition(mainResp, mainParsed.isJsonApi) ||
+          shouldFallbackToDirectSupabaseRequisition(grantedResp, grantedParsed.isJsonApi)) &&
+        sb
+      ) {
+        const direct = await refreshOvertimeRequisitionsDirect(sb, currentUser);
+        if (direct.success) {
+          setOvertimeRequisitions(deduplicateOvertimeRequisitions(direct.requisitions));
+          setGrantedOvertimeRequisitions(deduplicateOvertimeRequisitions(direct.grantedRequisitions));
+          return { success: true };
+        }
+        setOvertimeRequisitions([]);
+        setGrantedOvertimeRequisitions([]);
+        return { success: false, error: direct.error };
+      }
+
       let mainError: string | undefined;
 
-      if (mainResp.ok) {
-        const data = await mainResp.json().catch(() => ({}));
-        if (Array.isArray(data?.requisitions)) {
-          setOvertimeRequisitions(deduplicateOvertimeRequisitions(data.requisitions));
+      if (mainResp.ok && mainParsed.isJsonApi) {
+        if (Array.isArray(mainParsed.data?.requisitions)) {
+          setOvertimeRequisitions(deduplicateOvertimeRequisitions(mainParsed.data.requisitions));
         } else {
           setOvertimeRequisitions([]);
         }
       } else {
         setOvertimeRequisitions([]);
         if (mainResp.status !== 403) {
-          const errData = await mainResp.json().catch(() => ({}));
-          mainError = errData?.error || `Failed to load overtime requisitions (HTTP ${mainResp.status}).`;
+          mainError =
+            mainParsed.data?.error || `Failed to load overtime requisitions (HTTP ${mainResp.status}).`;
         }
       }
 
-      if (grantedResp.ok) {
-        const gData = await grantedResp.json().catch(() => ({}));
-        if (Array.isArray(gData?.requisitions)) {
-          setGrantedOvertimeRequisitions(deduplicateOvertimeRequisitions(gData.requisitions));
+      if (grantedResp.ok && grantedParsed.isJsonApi) {
+        if (Array.isArray(grantedParsed.data?.requisitions)) {
+          setGrantedOvertimeRequisitions(deduplicateOvertimeRequisitions(grantedParsed.data.requisitions));
         } else {
           setGrantedOvertimeRequisitions([]);
         }
@@ -24540,6 +24595,14 @@ export const ERPProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
       return { success: true };
     } catch (err: any) {
+      if (sb) {
+        const direct = await refreshOvertimeRequisitionsDirect(sb, currentUser);
+        if (direct.success) {
+          setOvertimeRequisitions(deduplicateOvertimeRequisitions(direct.requisitions));
+          setGrantedOvertimeRequisitions(deduplicateOvertimeRequisitions(direct.grantedRequisitions));
+          return { success: true };
+        }
+      }
       const msg = err?.message || 'Network error while fetching overtime requisitions from Supabase.';
       console.warn('Unable to refresh overtime requisitions:', err);
       return { success: false, error: msg };
@@ -24560,23 +24623,10 @@ export const ERPProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     purposes: Array<Partial<OvertimeRequisitionPurposeItem> | string>;
     remarks?: string;
   }) => {
-    try {
-      const resp = await fetchOvertimeRequisitionApi('/api/overtime/requisitions', {
-        method: 'POST',
-        body: JSON.stringify(payload),
-      });
-      const data = await resp.json().catch(() => ({}));
-      if (!resp.ok || data?.success !== true || data?.dbSynced !== true || !data?.requisition) {
-        return {
-          success: false,
-          dbSynced: false,
-          error:
-            data?.error ||
-            data?.dbError ||
-            'Failed to save overtime requisition in Supabase. Please try again.',
-        };
-      }
-      const created: OvertimeRequisition = data.requisition;
+    const sb = getSupabase();
+    const usingCustomSupabase = getSupabaseUrl() !== DEFAULT_SUPABASE_URL;
+
+    const finalizeCreated = async (created: OvertimeRequisition) => {
       setOvertimeRequisitions((prev) =>
         deduplicateOvertimeRequisitions([created, ...prev.filter((r) => r.id !== created.id)])
       );
@@ -24596,7 +24646,62 @@ export const ERPProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         requisition: created,
         dbSynced: true,
       };
+    };
+
+    if (usingCustomSupabase && sb) {
+      const directRes = await createOvertimeRequisitionDirect(sb, payload, currentUser);
+      if (directRes.success && directRes.dbSynced && directRes.requisition) {
+        return finalizeCreated(directRes.requisition);
+      }
+      return {
+        success: false,
+        dbSynced: false,
+        error: directRes.error || 'Failed to save overtime requisition in Supabase.',
+      };
+    }
+
+    try {
+      const resp = await fetchOvertimeRequisitionApi('/api/overtime/requisitions', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+      const { isJsonApi, data } = await parseOvertimeRequisitionApiResponse(resp);
+
+      if (shouldFallbackToDirectSupabaseRequisition(resp, isJsonApi) && sb) {
+        const directRes = await createOvertimeRequisitionDirect(sb, payload, currentUser);
+        if (directRes.success && directRes.dbSynced && directRes.requisition) {
+          return finalizeCreated(directRes.requisition);
+        }
+        return {
+          success: false,
+          dbSynced: false,
+          error: directRes.error || 'Failed to save overtime requisition in Supabase.',
+        };
+      }
+
+      if (!resp.ok || data?.success !== true || data?.dbSynced !== true || !data?.requisition) {
+        return {
+          success: false,
+          dbSynced: false,
+          error:
+            data?.error ||
+            data?.dbError ||
+            'Failed to save overtime requisition in Supabase. Please try again.',
+        };
+      }
+      return finalizeCreated(data.requisition as OvertimeRequisition);
     } catch (err: any) {
+      if (sb) {
+        const directRes = await createOvertimeRequisitionDirect(sb, payload, currentUser);
+        if (directRes.success && directRes.dbSynced && directRes.requisition) {
+          return finalizeCreated(directRes.requisition);
+        }
+        return {
+          success: false,
+          dbSynced: false,
+          error: directRes.error || err?.message || 'Failed to save overtime requisition in Supabase.',
+        };
+      }
       return {
         success: false,
         dbSynced: false,
@@ -24615,23 +24720,10 @@ export const ERPProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       remarks?: string;
     }
   ) => {
-    try {
-      const resp = await fetchOvertimeRequisitionApi(`/api/overtime/requisitions/${encodeURIComponent(id)}`, {
-        method: 'PUT',
-        body: JSON.stringify(payload),
-      });
-      const data = await resp.json().catch(() => ({}));
-      if (!resp.ok || data?.success !== true || data?.dbSynced !== true || !data?.requisition) {
-        return {
-          success: false,
-          dbSynced: false,
-          error:
-            data?.error ||
-            data?.dbError ||
-            'Failed to save updated overtime requisition in Supabase. Please try again.',
-        };
-      }
-      const updated: OvertimeRequisition = data.requisition;
+    const sb = getSupabase();
+    const usingCustomSupabase = getSupabaseUrl() !== DEFAULT_SUPABASE_URL;
+
+    const finalizeUpdated = async (updated: OvertimeRequisition) => {
       setOvertimeRequisitions((prev) =>
         deduplicateOvertimeRequisitions(prev.map((r) => (r.id === updated.id ? updated : r)))
       );
@@ -24652,7 +24744,62 @@ export const ERPProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         requisition: updated,
         dbSynced: true,
       };
+    };
+
+    if (usingCustomSupabase && sb) {
+      const directRes = await updateOvertimeRequisitionDirect(sb, id, payload, currentUser);
+      if (directRes.success && directRes.dbSynced && directRes.requisition) {
+        return finalizeUpdated(directRes.requisition);
+      }
+      return {
+        success: false,
+        dbSynced: false,
+        error: directRes.error || 'Failed to save updated overtime requisition in Supabase.',
+      };
+    }
+
+    try {
+      const resp = await fetchOvertimeRequisitionApi(`/api/overtime/requisitions/${encodeURIComponent(id)}`, {
+        method: 'PUT',
+        body: JSON.stringify(payload),
+      });
+      const { isJsonApi, data } = await parseOvertimeRequisitionApiResponse(resp);
+
+      if (shouldFallbackToDirectSupabaseRequisition(resp, isJsonApi) && sb) {
+        const directRes = await updateOvertimeRequisitionDirect(sb, id, payload, currentUser);
+        if (directRes.success && directRes.dbSynced && directRes.requisition) {
+          return finalizeUpdated(directRes.requisition);
+        }
+        return {
+          success: false,
+          dbSynced: false,
+          error: directRes.error || 'Failed to save updated overtime requisition in Supabase.',
+        };
+      }
+
+      if (!resp.ok || data?.success !== true || data?.dbSynced !== true || !data?.requisition) {
+        return {
+          success: false,
+          dbSynced: false,
+          error:
+            data?.error ||
+            data?.dbError ||
+            'Failed to save updated overtime requisition in Supabase. Please try again.',
+        };
+      }
+      return finalizeUpdated(data.requisition as OvertimeRequisition);
     } catch (err: any) {
+      if (sb) {
+        const directRes = await updateOvertimeRequisitionDirect(sb, id, payload, currentUser);
+        if (directRes.success && directRes.dbSynced && directRes.requisition) {
+          return finalizeUpdated(directRes.requisition);
+        }
+        return {
+          success: false,
+          dbSynced: false,
+          error: directRes.error || err?.message || 'Failed to save updated overtime requisition in Supabase.',
+        };
+      }
       return {
         success: false,
         dbSynced: false,
@@ -24666,26 +24813,10 @@ export const ERPProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     decision: RequisitionDecisionAction,
     remarks?: string
   ) => {
-    try {
-      const resp = await fetchOvertimeRequisitionApi(
-        `/api/overtime/requisitions/${encodeURIComponent(id)}/decision`,
-        {
-          method: 'POST',
-          body: JSON.stringify({ decision, remarks }),
-        }
-      );
-      const data = await resp.json().catch(() => ({}));
-      if (!resp.ok || data?.success !== true || data?.dbSynced !== true || !data?.requisition) {
-        return {
-          success: false,
-          dbSynced: false,
-          error:
-            data?.error ||
-            data?.dbError ||
-            'Failed to save Head Office decision in Supabase. Please try again.',
-        };
-      }
-      const updated: OvertimeRequisition = data.requisition;
+    const sb = getSupabase();
+    const usingCustomSupabase = getSupabaseUrl() !== DEFAULT_SUPABASE_URL;
+
+    const finalizeDecided = async (updated: OvertimeRequisition) => {
       setOvertimeRequisitions((prev) =>
         deduplicateOvertimeRequisitions(prev.map((r) => (r.id === updated.id ? updated : r)))
       );
@@ -24711,7 +24842,65 @@ export const ERPProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         requisition: updated,
         dbSynced: true,
       };
+    };
+
+    if (usingCustomSupabase && sb) {
+      const directRes = await decideOvertimeRequisitionDirect(sb, id, decision, remarks, currentUser);
+      if (directRes.success && directRes.dbSynced && directRes.requisition) {
+        return finalizeDecided(directRes.requisition);
+      }
+      return {
+        success: false,
+        dbSynced: false,
+        error: directRes.error || 'Failed to save Head Office decision in Supabase.',
+      };
+    }
+
+    try {
+      const resp = await fetchOvertimeRequisitionApi(
+        `/api/overtime/requisitions/${encodeURIComponent(id)}/decision`,
+        {
+          method: 'POST',
+          body: JSON.stringify({ decision, remarks }),
+        }
+      );
+      const { isJsonApi, data } = await parseOvertimeRequisitionApiResponse(resp);
+
+      if (shouldFallbackToDirectSupabaseRequisition(resp, isJsonApi) && sb) {
+        const directRes = await decideOvertimeRequisitionDirect(sb, id, decision, remarks, currentUser);
+        if (directRes.success && directRes.dbSynced && directRes.requisition) {
+          return finalizeDecided(directRes.requisition);
+        }
+        return {
+          success: false,
+          dbSynced: false,
+          error: directRes.error || 'Failed to save Head Office decision in Supabase.',
+        };
+      }
+
+      if (!resp.ok || data?.success !== true || data?.dbSynced !== true || !data?.requisition) {
+        return {
+          success: false,
+          dbSynced: false,
+          error:
+            data?.error ||
+            data?.dbError ||
+            'Failed to save Head Office decision in Supabase. Please try again.',
+        };
+      }
+      return finalizeDecided(data.requisition as OvertimeRequisition);
     } catch (err: any) {
+      if (sb) {
+        const directRes = await decideOvertimeRequisitionDirect(sb, id, decision, remarks, currentUser);
+        if (directRes.success && directRes.dbSynced && directRes.requisition) {
+          return finalizeDecided(directRes.requisition);
+        }
+        return {
+          success: false,
+          dbSynced: false,
+          error: directRes.error || err?.message || 'Failed to save Head Office decision in Supabase.',
+        };
+      }
       return {
         success: false,
         dbSynced: false,

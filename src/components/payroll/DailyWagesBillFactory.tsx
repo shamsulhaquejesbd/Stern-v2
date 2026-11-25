@@ -12,6 +12,8 @@ interface DailyWagesBillFactoryProps {
   searchQuery: string;
   departmentFilter: string;
   onDepartmentFilterChange?: (dept: string) => void;
+  employeeCategoryFilter?: string;
+  onEmployeeCategoryFilterChange?: (cat: string) => void;
   actionTypeFilter: string;
   officeFilter: string;
   activeMonthHint: string;
@@ -186,6 +188,8 @@ export const DailyWagesBillFactory: React.FC<DailyWagesBillFactoryProps> = ({
   searchQuery,
   departmentFilter,
   onDepartmentFilterChange,
+  employeeCategoryFilter = 'All',
+  onEmployeeCategoryFilterChange,
   actionTypeFilter,
   officeFilter,
   activeMonthHint,
@@ -298,6 +302,25 @@ export const DailyWagesBillFactory: React.FC<DailyWagesBillFactoryProps> = ({
           ...STANDARD_EMPLOYMENT_TYPES,
           ...fieldForceReps
             .map((r) => String(r.employmentType || (r as any).employment_type || '').trim())
+            .filter(Boolean),
+        ])
+      ),
+    [fieldForceReps]
+  );
+
+  const availableEmployeeCategories = useMemo(
+    () =>
+      Array.from(
+        new Set([
+          'Field Employee',
+          'Office Employee',
+          'Factory Employee',
+          'Production',
+          'Warehouse Employee',
+          'Management Employee',
+          'Other Employee',
+          ...fieldForceReps
+            .map((r) => String(r.employeeCategory || (r as any).employee_category || '').trim())
             .filter(Boolean),
         ])
       ),
@@ -424,6 +447,11 @@ export const DailyWagesBillFactory: React.FC<DailyWagesBillFactoryProps> = ({
               normStr(stripDepartmentCode(d)) === normStr(stripDepartmentCode(departmentFilter))
           );
           if (!matchesDept) return false;
+        }
+
+        if (employeeCategoryFilter && normStr(employeeCategoryFilter) !== 'all') {
+          const empCat = rep.employeeCategory || (rep as any).employee_category || '';
+          if (normStr(empCat) !== normStr(employeeCategoryFilter)) return false;
         }
 
         if (actionTypeFilter && actionTypeFilter !== 'All') {
@@ -575,6 +603,7 @@ export const DailyWagesBillFactory: React.FC<DailyWagesBillFactoryProps> = ({
     departments,
     searchQuery,
     departmentFilter,
+    employeeCategoryFilter,
     actionTypeFilter,
     officeFilter,
     normalizedSelectedEmpTypes,
@@ -966,6 +995,23 @@ export const DailyWagesBillFactory: React.FC<DailyWagesBillFactoryProps> = ({
               {availableDepartments.map((dept) => (
                 <option key={dept} value={dept}>
                   {dept}
+                </option>
+              ))}
+            </select>
+          )}
+
+          {/* Employee Category Selector */}
+          {onEmployeeCategoryFilterChange && (
+            <select
+              aria-label="Employee Category"
+              value={employeeCategoryFilter || 'All'}
+              onChange={(e) => onEmployeeCategoryFilterChange(e.target.value)}
+              className="px-2.5 py-1.5 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-700 dark:text-slate-200 bg-slate-50 dark:bg-slate-800 font-semibold"
+            >
+              <option value="All">All Employee Categories</option>
+              {availableEmployeeCategories.map((cat) => (
+                <option key={cat} value={cat}>
+                  {cat}
                 </option>
               ))}
             </select>

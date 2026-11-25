@@ -196,6 +196,7 @@ export const OvertimeReportsTab: React.FC = () => {
 
   const [activeReport, setActiveReport] = useState<number>(1);
   const [departmentFilter, setDepartmentFilter] = useState('all');
+  const [employeeCategoryFilter, setEmployeeCategoryFilter] = useState('all');
   const [employmentTypeFilters, setEmploymentTypeFilters] = useState<string[]>([]);
   const [isEmpTypeDropdownOpen, setIsEmpTypeDropdownOpen] = useState(false);
   const empTypeDropdownRef = useRef<HTMLDivElement>(null);
@@ -415,6 +416,32 @@ export const OvertimeReportsTab: React.FC = () => {
     [fieldForceReps]
   );
 
+  const STANDARD_EMPLOYEE_CATEGORIES = [
+    'Field Employee',
+    'Office Employee',
+    'Factory Employee',
+    'Production',
+    'Warehouse Employee',
+    'Management Employee',
+    'Other Employee',
+  ];
+
+  const availableEmployeeCategories = useMemo(
+    () =>
+      Array.from(
+        new Set([
+          ...STANDARD_EMPLOYEE_CATEGORIES,
+          ...fieldForceReps
+            .map((r) => String(r.employeeCategory || (r as any).employee_category || '').trim())
+            .filter(Boolean),
+          ...overtimeRequests
+            .map((r) => String(r.employeeCategory || (r as any).employee_category || '').trim())
+            .filter(Boolean),
+        ])
+      ),
+    [fieldForceReps, overtimeRequests]
+  );
+
   const availableGenders = useMemo(
     () =>
       Array.from(
@@ -458,6 +485,11 @@ export const OvertimeReportsTab: React.FC = () => {
     });
   };
 
+  const matchesEmployeeCategory = (empCategory?: string) => {
+    if (employeeCategoryFilter === 'all') return true;
+    return normStr(empCategory) === normStr(employeeCategoryFilter);
+  };
+
   const matchesEmpTypeAndGender = (empType?: string, empGender?: string) => {
     if (
       normalizedSelectedEmpTypes.length > 0 &&
@@ -487,8 +519,16 @@ export const OvertimeReportsTab: React.FC = () => {
         return false;
       }
     }
-    if (employmentTypeFilters.length > 0 || genderFilter !== 'all') {
+    if (employeeCategoryFilter !== 'all' || employmentTypeFilters.length > 0 || genderFilter !== 'all') {
       const matchedRep = fieldForceReps.find((e) => matchesEmpIdentity(e, r));
+      const resolvedCategory =
+        matchedRep?.employeeCategory ||
+        (matchedRep as any)?.employee_category ||
+        r.employeeCategory ||
+        (r as any)?.employee_category;
+      if (!matchesEmployeeCategory(resolvedCategory)) {
+        return false;
+      }
       if (
         !matchesEmpTypeAndGender(
           matchedRep?.employmentType || (matchedRep as any)?.employment_type,
@@ -583,9 +623,17 @@ export const OvertimeReportsTab: React.FC = () => {
         (Array.isArray(rep.departments) &&
           rep.departments.some((d) => matchesDepartmentFilter(d, departmentFilter)));
       const empMatch = employeeFilter === 'all' || rep.id === employeeFilter;
+      const repCategory = rep.employeeCategory || (rep as any).employee_category || '';
       const repEmpType = rep.employmentType || (rep as any).employment_type || '-';
       const repGender = rep.gender || '-';
-      if (!deptMatch || !empMatch || !matchesEmpTypeAndGender(repEmpType, repGender)) return;
+      if (
+        !deptMatch ||
+        !empMatch ||
+        !matchesEmployeeCategory(repCategory) ||
+        !matchesEmpTypeAndGender(repEmpType, repGender)
+      ) {
+        return;
+      }
 
       const str = salaryStructures.find(
         (s) => s.employeeId === rep.id || (rep.code && s.employeeId === rep.code)
@@ -620,6 +668,7 @@ export const OvertimeReportsTab: React.FC = () => {
       employeeCode?: string;
       employeeName?: string;
       department?: string;
+      employeeCategory?: string;
       basicSalaryBDT?: number;
     }) => {
       if (findMatchingSeed(rec)) return;
@@ -636,9 +685,15 @@ export const OvertimeReportsTab: React.FC = () => {
       ) {
         return;
       }
+      const repCategory =
+        matchedRep?.employeeCategory ||
+        (matchedRep as any)?.employee_category ||
+        rec.employeeCategory ||
+        (rec as any)?.employee_category ||
+        '';
       const repEmpType = matchedRep?.employmentType || (matchedRep as any)?.employment_type || '-';
       const repGender = matchedRep?.gender || '-';
-      if (!matchesEmpTypeAndGender(repEmpType, repGender)) {
+      if (!matchesEmployeeCategory(repCategory) || !matchesEmpTypeAndGender(repEmpType, repGender)) {
         return;
       }
       const key = matchedRep?.id || rec.employeeId || rec.employeeCode || rec.employeeName || '';
@@ -787,6 +842,7 @@ export const OvertimeReportsTab: React.FC = () => {
     departments,
     salaryStructures,
     departmentFilter,
+    employeeCategoryFilter,
     employmentTypeFilters,
     genderFilter,
     employeeFilter,
@@ -1441,7 +1497,7 @@ export const OvertimeReportsTab: React.FC = () => {
               ) : (
                 <FileText className="w-4 h-4" />
               )}
-              <span>{isExportingPdf ? 'Generating PDF...' : 'Download PDF (Landscape)'}</span>
+              <span>{isExportingPdf ? 'Generating PDF...' : 'Download PDF'}</span>
             </button>
             <button
               onClick={() => exportToExcel(currentData, activeReportDef.name.replace(/\s+/g, '_'))}
@@ -1510,6 +1566,18 @@ export const OvertimeReportsTab: React.FC = () => {
             <option value="all">All Departments</option>
             {availableDepartments.map((dept) => (
               <option key={dept} value={dept}>{dept}</option>
+            ))}
+          </select>
+
+          <select
+            aria-label="Employee Category"
+            value={employeeCategoryFilter}
+            onChange={(e) => setEmployeeCategoryFilter(e.target.value)}
+            className="px-2.5 py-1.5 border border-slate-200 rounded-lg text-slate-700 bg-white"
+          >
+            <option value="all">All Employee Categories</option>
+            {availableEmployeeCategories.map((cat) => (
+              <option key={cat} value={cat}>{cat}</option>
             ))}
           </select>
 

@@ -3896,7 +3896,7 @@ export function createAppServer() {
     const perms = resolveOvertimePermissions(caller);
 
     if (grantedOnly) {
-      if (!perms.viewRequests && !perms.createRequest && !perms.editRequest && !perms.viewRequisition && !perms.approveRequisition) {
+      if (!perms.viewRequests && !perms.createRequest && !perms.editRequest && !perms.viewRequisition && !perms.approveRequisition && !perms.viewReports) {
         return res.status(403).json({
           allowed: false,
           code: 'OVERTIME_REQUISITION_FORBIDDEN',

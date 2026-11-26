@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useERP } from '../../context/ERPContext';
-import { calculateEmployeeIndividualOvertime } from '../../types/overtime';
+import { calculateEmployeeIndividualOvertime, OvertimeRequisition } from '../../types/overtime';
 import { OVERTIME_REPORT_ACTION_MAP } from '../../types/pagePermissions';
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
@@ -171,6 +171,9 @@ const isEmployeeActive = (rep?: {
 export const OvertimeReportsTab: React.FC = () => {
   const {
     overtimeRequests,
+    overtimeRequisitions,
+    grantedOvertimeRequisitions,
+    refreshOvertimeRequisitions,
     overtimeAttendances,
     fieldForceReps,
     departments,
@@ -235,6 +238,11 @@ export const OvertimeReportsTab: React.FC = () => {
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [isEmpTypeDropdownOpen]);
+
+  useEffect(() => {
+    if (!canViewPage || !currentUser?.id || currentUser.id === 'guest') return;
+    void refreshOvertimeRequisitions();
+  }, [canViewPage, currentUser?.id]);
 
   // If the default current month has no Final Approved overtime data yet while another month does, auto-select the latest month with Final Approved OT data
   useEffect(() => {
@@ -850,15 +858,40 @@ export const OvertimeReportsTab: React.FC = () => {
       grandTotalAmount += row.totalAmount;
     });
 
+    const dailyRequisitionTotals = new Array(daysInActiveMonth).fill(0);
+    let requisitionGrandTotalHours = 0;
+    const approvedRequisitionMap = new Map<string, OvertimeRequisition>();
+    [...(grantedOvertimeRequisitions || []), ...(overtimeRequisitions || [])].forEach((req) => {
+      if (req && req.id && req.status === 'Approved') {
+        approvedRequisitionMap.set(req.id, req);
+      }
+    });
+    approvedRequisitionMap.forEach((req) => {
+      if (!matchesPeriod(req.overtimeDate)) return;
+      const parsed = extractYMD(req.overtimeDate);
+      const reqTotalHours =
+        Math.round(Number(req.requiredWorkers || 0) * Number(req.requestedHours || 0) * 100) / 100;
+      if (parsed && parsed.day >= 1 && parsed.day <= daysInActiveMonth && reqTotalHours > 0) {
+        dailyRequisitionTotals[parsed.day - 1] =
+          Math.round((dailyRequisitionTotals[parsed.day - 1] + reqTotalHours) * 100) / 100;
+        requisitionGrandTotalHours =
+          Math.round((requisitionGrandTotalHours + reqTotalHours) * 100) / 100;
+      }
+    });
+
     return {
       rows,
       dailyTotals,
       grandTotalHours,
+      dailyRequisitionTotals,
+      requisitionGrandTotalHours,
       grandTotalAmount: Math.round(grandTotalAmount),
       amountInWords: numberToWordsSimple(grandTotalAmount),
     };
   }, [
     overtimeRequests,
+    overtimeRequisitions,
+    grantedOvertimeRequisitions,
     overtimeAttendances,
     fieldForceReps,
     departments,
@@ -944,6 +977,22 @@ export const OvertimeReportsTab: React.FC = () => {
         '',
         '',
       ]);
+      sheetRows.push([
+        'OT Requisition (Approved)',
+        '',
+        '',
+        '',
+        '',
+        '',
+        '',
+        '',
+        '',
+        ...deptOvertimeSheet.dailyRequisitionTotals.map((t) => Number(t.toFixed(2))),
+        Number(deptOvertimeSheet.requisitionGrandTotalHours.toFixed(2)),
+        '',
+        '',
+        '',
+      ]);
       sheetRows.push([]);
       sheetRows.push([
         '',
@@ -961,6 +1010,7 @@ export const OvertimeReportsTab: React.FC = () => {
         { s: { r: 1, c: 0 }, e: { r: 1, c: totalTableCols - 1 } },
         { s: { r: 2, c: 0 }, e: { r: 2, c: totalTableCols - 1 } },
         { s: { r: 5 + deptOvertimeSheet.rows.length, c: 0 }, e: { r: 5 + deptOvertimeSheet.rows.length, c: 2 } },
+        { s: { r: 6 + deptOvertimeSheet.rows.length, c: 0 }, e: { r: 6 + deptOvertimeSheet.rows.length, c: 2 } },
       ];
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, 'Daily Overtime Bill');
@@ -1050,7 +1100,8 @@ export const OvertimeReportsTab: React.FC = () => {
           [data-ot-pdf-root="true"] [data-ot-wk-col="true"] {
             font-size: 18px !important;
           }
-          [data-ot-pdf-root="true"] [data-ot-row="total"] td {
+          [data-ot-pdf-root="true"] [data-ot-row="total"] td,
+          [data-ot-pdf-root="true"] [data-ot-row="requisition-total"] td {
             font-size: 20px !important;
           }
           [data-ot-pdf-root="true"] [data-ot-row="empty"] td {
@@ -1175,11 +1226,14 @@ export const OvertimeReportsTab: React.FC = () => {
       const totalSheetHeight = measureEl.getBoundingClientRect().height;
       const theadEl = measureEl.querySelector('thead') as HTMLElement | null;
       const totalRowEl = measureEl.querySelector('[data-ot-row="total"]') as HTMLElement | null;
+      const reqTotalRowEl = measureEl.querySelector('[data-ot-row="requisition-total"]') as HTMLElement | null;
       const footerEl = measureEl.querySelector('[data-ot-footer="true"]') as HTMLElement | null;
       const workerRowEls = Array.from(measureEl.querySelectorAll('[data-ot-row="data"]')) as HTMLElement[];
 
       const theadHeight = theadEl ? theadEl.getBoundingClientRect().height : (isDeptBill ? 88 : 44);
-      const totalRowHeight = totalRowEl ? totalRowEl.getBoundingClientRect().height : 0;
+      const totalRowHeight =
+        (totalRowEl ? totalRowEl.getBoundingClientRect().height : 0) +
+        (reqTotalRowEl ? reqTotalRowEl.getBoundingClientRect().height : 0);
       const footerHeight = footerEl ? footerEl.getBoundingClientRect().height + (isDeptBill ? 20 : 10) : 0;
       const rowHeights = workerRowEls.map((tr) => tr.getBoundingClientRect().height);
       const allRowsHeight = rowHeights.reduce((sum, h) => sum + h, 0);
@@ -1259,6 +1313,11 @@ export const OvertimeReportsTab: React.FC = () => {
             const totalRow = clonedEl.querySelector('[data-ot-row="total"]') as HTMLElement | null;
             if (totalRow && !slice.includeFooter) {
               totalRow.style.display = 'none';
+            }
+
+            const reqTotalRow = clonedEl.querySelector('[data-ot-row="requisition-total"]') as HTMLElement | null;
+            if (reqTotalRow && !slice.includeFooter) {
+              reqTotalRow.style.display = 'none';
             }
 
             const clonedFooterEl = clonedEl.querySelector('[data-ot-footer="true"]') as HTMLElement | null;
@@ -1957,6 +2016,33 @@ export const OvertimeReportsTab: React.FC = () => {
                   <td className="border-r-[0.5px] border-b-[0.5px] border-solid border-black px-1.5 py-1 text-center font-sans">
                     {canViewMonthlySalary ? deptOvertimeSheet.grandTotalAmount : 'Restricted'}
                   </td>
+                  <td className="border-r-[0.5px] border-b-[0.5px] border-solid border-black px-2 py-1"></td>
+                  <td className="border-r-[0.5px] border-b-[0.5px] border-solid border-black px-1.5 py-1"></td>
+                </tr>
+
+                {/* Approved Overtime Requisition Day-Wise Total Row */}
+                <tr data-ot-row="requisition-total" className="font-bold bg-white">
+                  <td colSpan={3} className="border-r-[0.5px] border-b-[0.5px] border-solid border-black px-2 py-1 text-center text-[11px] whitespace-nowrap">
+                    OT Requisition (Approved)
+                  </td>
+                  <td className="border-r-[0.5px] border-b-[0.5px] border-solid border-black px-1 py-1"></td>
+                  <td className="border-r-[0.5px] border-b-[0.5px] border-solid border-black px-1 py-1"></td>
+                  <td className="border-r-[0.5px] border-b-[0.5px] border-solid border-black px-1 py-1"></td>
+                  <td className="border-r-[0.5px] border-b-[0.5px] border-solid border-black px-1 py-1"></td>
+                  <td className="border-r-[0.5px] border-b-[0.5px] border-solid border-black px-1 py-1"></td>
+                  <td className="border-r-[0.5px] border-b-[0.5px] border-solid border-black px-1 py-1"></td>
+                  {deptOvertimeSheet.dailyRequisitionTotals.map((reqDaySum, idx) => (
+                    <td
+                      key={`req-tot-day-${idx}`}
+                      className="border-r-[0.5px] border-b-[0.5px] border-solid border-black px-0.5 py-1 text-center font-sans"
+                    >
+                      {formatHoursValue(reqDaySum)}
+                    </td>
+                  ))}
+                  <td className="border-r-[0.5px] border-b-[0.5px] border-solid border-black px-1.5 py-1 text-center font-sans">
+                    {formatHoursValue(deptOvertimeSheet.requisitionGrandTotalHours)}
+                  </td>
+                  <td className="border-r-[0.5px] border-b-[0.5px] border-solid border-black px-1.5 py-1"></td>
                   <td className="border-r-[0.5px] border-b-[0.5px] border-solid border-black px-2 py-1"></td>
                   <td className="border-r-[0.5px] border-b-[0.5px] border-solid border-black px-1.5 py-1"></td>
                 </tr>
